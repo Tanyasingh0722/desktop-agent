@@ -1,0 +1,28 @@
+appId: com.ash.companion
+productName: Ash
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/**/*
+  - "!**/*.map"
+asarUnpack:
+  - "**/*.node"
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.productivity
+  artifactName: "${name}-${version}-mac-${arch}.${ext}"
+win:
+  target:
+    - nsis
+  artifactName: "${name}-${version}-win-${arch}.${ext}"
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  deleteAppDataOnUninstall: false
+linux:
+  target:
+    - AppImage
+  category: Utility

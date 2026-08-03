@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output
+out/
+dist/
+
+# Environment
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Electron build artifacts
+*.dmg
+*.exe
+*.msi
+*.AppImage
+
+# Logs
+*.log
+npm-debug.log*
