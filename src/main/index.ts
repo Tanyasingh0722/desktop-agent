@@ -380,7 +380,7 @@ app.whenReady().then(async () => {
     const cursor = screen.getCursorScreenPoint()
     const bounds = win.getBounds()
 
-    // Calculate cursor velocity (distance moved since last check ~200ms)
+    // Calculate cursor velocity (distance moved since last check ~80ms)
     const cursorSpeed = Math.hypot(cursor.x - lastCursorPos.x, cursor.y - lastCursorPos.y)
     lastCursorPos = { x: cursor.x, y: cursor.y }
 
@@ -434,6 +434,110 @@ app.whenReady().then(async () => {
     console.log('🐺 Mood dismissed')
   })
 
+  // ── Break window ──────────────────────────────────────────────────────────
+
+  let breakWindow: BrowserWindow | null = null
+
+  /** Open a fullscreen breathing break window */
+  ipcMain.on('break:start', (_event, durationSeconds: number = 180) => {
+    if (breakWindow && !breakWindow.isDestroyed()) {
+      breakWindow.focus()
+      return
+    }
+
+    const primaryDisplay = screen.getPrimaryDisplay()
+    const { width, height } = primaryDisplay.bounds
+
+    breakWindow = new BrowserWindow({
+      width,
+      height,
+      x: primaryDisplay.bounds.x,
+      y: primaryDisplay.bounds.y,
+      frame: false,
+      titleBarStyle: 'hidden',         // suppress macOS native title bar chrome
+      transparent: false,
+      resizable: false,
+      movable: false,
+      fullscreen: false,               // manual bounds cover screen — avoids fullscreen animation
+      alwaysOnTop: true,
+      skipTaskbar: true,
+      hasShadow: false,
+      backgroundColor: '#F5F4F0',
+      webPreferences: {
+        preload: join(__dirname, '../preload/index.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: false
+      }
+    })
+
+
+    // Stay on top of fullscreen apps across all spaces
+    breakWindow.setAlwaysOnTop(true, 'screen-saver')
+    breakWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true })
+
+    // Load the dedicated break.html
+    if (is.dev && process.env['ELECTRON_RENDERER_URL']) {
+      // ELECTRON_RENDERER_URL is the Vite dev server origin (e.g. http://localhost:5173)
+      const baseUrl = process.env['ELECTRON_RENDERER_URL'].replace(/\/$/, '')
+      breakWindow.loadURL(`${baseUrl}/break.html?duration=${durationSeconds}`)
+    } else {
+      breakWindow.loadFile(join(__dirname, '../renderer/break.html'), {
+        query: { duration: String(durationSeconds) }
+      })
+    }
+
+    // When break window closes for any reason, notify companion window
+    const onBreakClosed = (completed: boolean) => {
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('break:ended', completed)
+        // Reset notification active flag so timers resume
+        setIsNotificationActive(false)
+      }
+      breakWindow = null
+      console.log(`🧘 Break window closed (completed: ${completed})`)
+    }
+
+    breakWindow.on('closed', () => {
+      onBreakClosed(false)
+    })
+
+    // Mark notification active while break is running (suppresses new notifications)
+    setIsNotificationActive(true)
+    console.log(`🧘 Break window opened (${durationSeconds}s)`)
+  })
+
+  /** Close the break window — called from the break renderer via ashAPI.endBreak() */
+  ipcMain.on('break:end', (_event, completed: boolean = false) => {
+    if (breakWindow && !breakWindow.isDestroyed()) {
+      // Remove our 'closed' listener first to prevent double-firing onBreakClosed
+      breakWindow.removeAllListeners('closed')
+      breakWindow.close()
+      breakWindow = null
+
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('break:ended', completed)
+        setIsNotificationActive(false)
+      }
+      console.log(`🧘 Break ended (completed: ${completed})`)
+    }
+  })
+
+  // Auto-close break window if system suspends
+  powerMonitor.on('suspend', () => {
+    if (breakWindow && !breakWindow.isDestroyed()) {
+      breakWindow.removeAllListeners('closed')
+      breakWindow.close()
+      breakWindow = null
+      if (win && !win.isDestroyed()) {
+        win.webContents.send('break:ended', false)
+        setIsNotificationActive(false)
+      }
+    }
+  })
+
+
+
   // macOS: re-create window if dock icon clicked and no windows open
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
@@ -447,6 +551,7 @@ app.whenReady().then(async () => {
     
     // Recalculate timers that might have frozen during sleep
     recalculateTimers(mainWindow)
+    recordInteraction(mainWindow)
 
     // Wake-up creative greeting: switch to 'pleased' mood and do a happy jump
     mainWindow.webContents.send('mood:change', 'pleased')

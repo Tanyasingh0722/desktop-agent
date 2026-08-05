@@ -1,13 +1,16 @@
-import React, { useState, useCallback, useEffect } from 'react'
+import React, { useState, useCallback, useEffect, useRef } from 'react'
 import Companion from './components/Companion'
-import Notification from './components/Notification'
+import NotificationStack, { type NotificationItem } from './components/Notification'
 import { getNotificationForMood } from './lib/notifications'
 import TodoDrawer from './components/TodoDrawer'
 import CheckInPrompt from './components/CheckInPrompt'
 import { useMood } from './hooks/useMood'
 import { useTasks } from './hooks/useTasks'
 import { usePomodoro } from './hooks/usePomodoro'
+import { useSleepTimer } from './hooks/useSleepTimer'
 
+let _notifId = 0
+function nextId() { return `notif-${++_notifId}` }
 
 /**
  * App — root component that orchestrates the companion, drawer, and prompts.
@@ -16,7 +19,7 @@ import { usePomodoro } from './hooks/usePomodoro'
  * - The outer app-container is a flex row (or flex row-reverse depending on anchor)
  * - Companion is always pinned to its anchor corner
  * - Todo drawer / check-in opens BESIDE the companion horizontally
- * - Notification toast floats above the companion sprite
+ * - Notification stack floats above the companion sprite
  */
 export default function App() {
   const { mood, visualMood, detail, changeMood, pet, dismiss } = useMood()
@@ -33,18 +36,72 @@ export default function App() {
 
   const [drawerOpen, setDrawerOpen] = useState(false)
   const [checkInVisible, setCheckInVisible] = useState(false)
+  const [panelVisible, setPanelVisible] = useState(false) // true while panel is open OR animating closed
   const [anchor, setAnchor] = useState<'left' | 'right'>('right')
   const [verticalAnchor, setVerticalAnchor] = useState<'top' | 'bottom'>('bottom')
   const [focusCountdown, setFocusCountdown] = useState<number | null>(null)
   const [currentContext, setCurrentContext] = useState<{activeApp: string, activeTab: string, windowBounds: any} | null>(null)
+  const closingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // ── Notification queue ─────────────────────────────
+  const [notifQueue, setNotifQueue] = useState<NotificationItem[]>([])
+  // Track which mood+detail combos are already in the queue to avoid dupes
+  const activeNotifKeys = useRef<Set<string>>(new Set())
+
+  // Close the panel with a smooth exit: CSS animation plays for 340ms before
+  // panelVisible goes false (which triggers the window to shrink).
+  // Must be defined early so all effects below can reference it.
+  const closePanel = useCallback(() => {
+    if (closingTimerRef.current) clearTimeout(closingTimerRef.current)
+    setDrawerOpen(false)
+    setCheckInVisible(false)
+    setFocusCountdown(null)
+    setPanelVisible(false)
+  }, [])
+
+  // ── Sleep Timer ────────────────────────────────────
+  const handleSleep = useCallback(() => {
+    changeMood('sleeping')
+  }, [changeMood])
+
+  const isUIActive = drawerOpen || checkInVisible || panelVisible || notifQueue.length > 0
+  useSleepTimer({
+    mood,
+    isActive: isUIActive,
+    onSleep: handleSleep
+  })
+
+  const pushNotif = useCallback((
+    item: Omit<NotificationItem, 'id'>,
+    key?: string
+  ) => {
+    const dedupeKey = key ?? `${item.message}`
+    activeNotifKeys.current.add(dedupeKey)
+    const id = nextId()
+    setNotifQueue(prev => [{ ...item, id }]) // Replace or push cleanly
+  }, [])
+
+  const dismissNotif = useCallback((id: string) => {
+    activeNotifKeys.current.clear()
+    setNotifQueue(prev => prev.filter(n => n.id !== id))
+  }, [])
+
+
+  // Auto-dismiss non-question notifications after 7s
+  useEffect(() => {
+    if (notifQueue.length === 0) return
+    const oldest = notifQueue[0]
+    if (oldest.isQuestion) return
+    const timer = setTimeout(() => dismissNotif(oldest.id), 7000)
+    return () => clearTimeout(timer)
+  }, [notifQueue, dismissNotif])
 
   const handleFocusComplete = useCallback(() => {
     changeMood('success')
   }, [changeMood])
 
-  const handleMinuteWarning = useCallback((secsLeft: number) => {
+  const handleMinuteWarning = useCallback((secsLeft: number | null) => {
     setFocusCountdown(secsLeft)
-    if (secsLeft === 0) setFocusCountdown(null)
   }, [])
 
   const handleReset = useCallback(() => {
@@ -57,10 +114,112 @@ export default function App() {
 
   const pomodoro = usePomodoro(handleFocusComplete, handleMinuteWarning, handleReset)
 
-  // ── Notification logic ────────────────────────────
-  const notif = getNotificationForMood(mood, detail)
-  const isCountdownActive = focusCountdown !== null && focusCountdown > 0
-  const showNotification = notif !== null || isCountdownActive
+  // ── Push countdown notification when timer is in last 60s ─────────
+  const prevCountdownRef = useRef<number | null>(null)
+  useEffect(() => {
+    if (focusCountdown !== null && focusCountdown > 0) {
+      // Update in-place if the countdown notif is already showing
+      setNotifQueue(prev => {
+        const idx = prev.findIndex(n => n.id.startsWith('countdown-'))
+        const msg = `Almost done! ${focusCountdown}s left ⏳`
+        if (idx >= 0) {
+          const updated = [...prev]
+          updated[idx] = { ...updated[idx], message: msg }
+          return updated
+        }
+        // Add a new countdown slot (won't be a regular notif ID)
+        return [...prev, { id: 'countdown-live', message: msg, emoji: '⏳' }]
+      })
+    } else {
+      // Remove countdown notif when null or 0
+      setNotifQueue(prev => prev.filter(n => n.id !== 'countdown-live'))
+    }
+    prevCountdownRef.current = focusCountdown
+  }, [focusCountdown])
+
+  // ── Push mood-based notifications ─────────────────────────────────
+  useEffect(() => {
+    const notif = getNotificationForMood(mood, detail)
+    if (!notif) {
+      // Remove any non-countdown, non-question notifs when mood goes idle
+      if (mood === 'idle') {
+        setNotifQueue(prev => prev.filter(n => n.isQuestion || n.id === 'countdown-live'))
+        activeNotifKeys.current.forEach(k => {
+          // Keep question keys and countdown
+          const stillPresent = notifQueue.find(n => n.message === k && (n.isQuestion || n.id === 'countdown-live'))
+          if (!stillPresent) activeNotifKeys.current.delete(k)
+        })
+      }
+      return
+    }
+    const key = `${mood}-${detail ?? ''}`
+    pushNotif({
+      message: notif.message,
+      emoji: notif.emoji,
+      isQuestion: notif.isQuestion,
+      confirmText: notif.confirmText,
+      cancelText: notif.cancelText,
+      onConfirm: () => {
+        distractionStartTimeRef.current = Date.now()
+        lastContextReminderRef.current = Date.now()
+        if (mood === 'waiting') {
+          setCheckInVisible(true)
+        } else if (mood === 'concerned' && detail === 'screen') {
+          // Launch the full-screen breathing break overlay
+          changeMood('idle')
+          window.ashAPI?.dismissMood()
+          window.ashAPI?.startBreak(180)
+        } else {
+          changeMood('happy')
+          setTimeout(() => changeMood('idle'), 2500)
+          window.ashAPI?.dismissMood()
+        }
+      },
+      onCancel: () => {
+        distractionStartTimeRef.current = Date.now()
+        lastContextReminderRef.current = Date.now()
+        if (mood === 'waiting') {
+          handleCheckInSkip()
+        } else if (mood === 'concerned' && detail === 'water') {
+          changeMood('angry', 'refused-water')
+          setTimeout(() => {
+            changeMood('idle')
+            window.ashAPI?.dismissMood()
+          }, 3000)
+        } else if (mood === 'concerned' && detail === 'screen') {
+          changeMood('angry', 'refused-screen')
+          setTimeout(() => {
+            changeMood('idle')
+            window.ashAPI?.dismissMood()
+          }, 3000)
+        } else {
+          changeMood('angry')
+          setTimeout(() => {
+            changeMood('idle')
+            window.ashAPI?.dismissMood()
+          }, 2500)
+        }
+      }
+    }, key)
+  }, [mood, detail]) // intentional: only re-run when mood/detail change
+
+
+  // ── Listen for break window closing ───────────────────────────────
+  useEffect(() => {
+    const unsub = window.ashAPI?.onBreakEnd?.((completed: boolean) => {
+      if (completed) {
+        // Timer ran out — celebrate!
+        changeMood('happy')
+        setTimeout(() => changeMood('idle'), 3000)
+      } else {
+        // User left early — just go idle quietly
+        changeMood('idle')
+      }
+    })
+    return () => { unsub?.() }
+  }, [changeMood])
+
+  const showNotification = notifQueue.length > 0
 
   // Helper: fetch both anchors from main (uses window position, not cursor)
   const refreshAnchor = useCallback(() => {
@@ -82,8 +241,8 @@ export default function App() {
   }, [refreshAnchor])
 
   // ── Contextual Reminders ───────────────────────────
-  const lastContextReminderRef = React.useRef(0)
-  const distractionStartTimeRef = React.useRef<number | null>(null)
+  const lastContextReminderRef = useRef(0)
+  const distractionStartTimeRef = useRef<number | null>(null)
 
   useEffect(() => {
     if (!window.ashAPI?.onContextUpdate) return
@@ -95,8 +254,6 @@ export default function App() {
 
   useEffect(() => {
     if (!currentContext) return
-    // Debounce contextual reminders (max 1 every 15 seconds)
-    if (Date.now() - lastContextReminderRef.current < 15 * 1000) return
 
     const appStr = (currentContext.activeApp || '').toLowerCase()
     const tabStr = (currentContext.activeTab || '').toLowerCase()
@@ -105,40 +262,33 @@ export default function App() {
     const isDistraction = distractions.some(d => appStr.includes(d) || tabStr.includes(d))
 
     if (isDistraction) {
-      if (distractionStartTimeRef.current === null) {
-        distractionStartTimeRef.current = Date.now()
-      }
-      const elapsedMinutes = (Date.now() - distractionStartTimeRef.current) / (1000 * 60)
-      
-      // Only get angry if streaming continuously for 30+ minutes
-      if (elapsedMinutes >= 30) {
-        if (Date.now() - lastContextReminderRef.current >= 15 * 1000) {
-          lastContextReminderRef.current = Date.now()
-          changeMood('angry', 'distraction')
-          setTimeout(() => {
-             changeMood('idle')
-             window.ashAPI?.dismissMood()
-          }, 8000)
-        }
+      const DISTRACTION_COOLDOWN_MS = 60 * 1000 // 60 seconds
+      if (Date.now() - lastContextReminderRef.current >= DISTRACTION_COOLDOWN_MS) {
+        lastContextReminderRef.current = Date.now()
+        changeMood('angry', 'distraction')
+        setTimeout(() => {
+          changeMood('idle')
+          window.ashAPI?.dismissMood()
+        }, 8000)
       }
       return
-    } else {
-      // User stopped streaming, reset distraction timer
-      distractionStartTimeRef.current = null
     }
+
+
 
     const pendingTasks = tasks.filter(t => t.status === 'pending')
     if (pendingTasks.length === 0) return
 
     for (const task of pendingTasks) {
-      const words = task.text.toLowerCase().split(' ').filter(w => w.length > 2)
+      // Guard: only match words 4+ chars to avoid false positives like "the", "tex", etc.
+      const words = task.text.toLowerCase().split(' ').filter(w => w.length >= 4)
       for (const w of words) {
         if (appStr.includes(w) || tabStr.includes(w)) {
           lastContextReminderRef.current = Date.now()
           changeMood('happy', 'focus')
           setTimeout(() => {
-             changeMood('idle')
-             window.ashAPI?.dismissMood()
+            changeMood('idle')
+            window.ashAPI?.dismissMood()
           }, 6000)
           return
         }
@@ -164,6 +314,28 @@ export default function App() {
     }
   }, [mood, tasks, changeMood, refreshAnchor])
 
+  // ── Periodic Task Reminder ─────────────────────────
+  const lastTaskReminderRef = useRef<number>(Date.now())
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const pending = tasks.filter(t => t.status === 'pending')
+      if (pending.length > 0 && mood === 'idle') {
+        const now = Date.now()
+        // Remind every 15 minutes if idle
+        if (now - lastTaskReminderRef.current >= 15 * 60 * 1000) {
+          lastTaskReminderRef.current = now
+          const taskText = pending[0].text
+          changeMood('remind', `Task reminder: ${taskText}`)
+          setTimeout(() => {
+            changeMood('idle')
+            window.ashAPI?.dismissMood()
+          }, 7000)
+        }
+      }
+    }, 60 * 1000)
+    return () => clearInterval(interval)
+  }, [tasks, mood, changeMood])
+
   const handleDragEnd = useCallback(() => {
     refreshAnchor()
     changeMood('idle')
@@ -177,23 +349,22 @@ export default function App() {
   }, [showNotification, refreshAnchor])
 
   // ── Handle window resizing ─────────────────────────
-  // The companion is always 180×180 in its "slot".
-  // Drawer/checkin sits beside it horizontally → window expands width not height.
-  // Only height expands when the drawer content is taller than 180px.
+  // panelVisible stays true for the 350ms CSS exit animation — we don't shrink
+  // the window until it's false, to prevent the flash-glitch.
   useEffect(() => {
     if (checkInVisible) {
-      // Companion (180) + gap (8) + checkin panel (360 wide, 400 tall)
       window.ashAPI?.resizeWindow(560, 420, anchor, verticalAnchor)
     } else if (drawerOpen) {
-      // Companion (180) + gap (8) + drawer (360 wide, capped at 540 tall)
-      window.ashAPI?.resizeWindow(560, 540, anchor, verticalAnchor)
+      window.ashAPI?.resizeWindow(560, 580, anchor, verticalAnchor)
+    } else if (panelVisible) {
+      // Still showing (animating out) — keep expanded size so companion doesn't flash
+      return
     } else if (showNotification) {
-      // Companion (180) + notification bubble beside
       window.ashAPI?.resizeWindow(460, 360, anchor, verticalAnchor)
     } else {
       window.ashAPI?.resizeWindow(120, 120, anchor, verticalAnchor)
     }
-  }, [checkInVisible, drawerOpen, showNotification, anchor, verticalAnchor])
+  }, [checkInVisible, drawerOpen, panelVisible, showNotification, anchor, verticalAnchor])
 
   // Handle click-through on transparent body pixels
   useEffect(() => {
@@ -206,7 +377,7 @@ export default function App() {
         target.closest('.side-panel') ||
         target.closest('.drawer-panel') ||
         target.closest('.checkin-prompt') ||
-        target.closest('.notification-toast')
+        target.closest('.notif-stack')
       )
 
       if (isInteractive || drawerOpen || checkInVisible) {
@@ -238,23 +409,25 @@ export default function App() {
       )
 
       if (!isInsideModal) {
-        setDrawerOpen(false)
-        setCheckInVisible(false)
-        window.ashAPI?.resizeWindow(120, 120, anchor, verticalAnchor)
+        closePanel()
       }
     }
 
     window.addEventListener('mousedown', handleGlobalMouseDown, true)
     return () => window.removeEventListener('mousedown', handleGlobalMouseDown, true)
-  }, [drawerOpen, checkInVisible, anchor, verticalAnchor])
+  }, [drawerOpen, checkInVisible, closePanel])
 
   const handleCompanionClick = useCallback(() => {
+    if (mood === 'sleeping') {
+      changeMood('idle')
+      return
+    }
     if (mood === 'waiting') {
       setCheckInVisible(true)
     } else {
       setDrawerOpen((prev) => !prev)
     }
-  }, [mood])
+  }, [mood, changeMood])
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
@@ -288,34 +461,35 @@ export default function App() {
   }, [changeMood])
 
   const handleCloseDrawer = useCallback(() => {
-    setDrawerOpen(false)
-    window.ashAPI?.resizeWindow(120, 120, anchor, verticalAnchor)
-  }, [anchor, verticalAnchor])
+    closePanel()
+  }, [closePanel])
 
   // ── Layout logic ─────────────────────────────────────────────────────────
-  // When anchor=right, Ash is on the right → modal opens to the LEFT of him.
-  //   flex direction: row-reverse  (companion on right, modal grows left)
-  // When anchor=left, Ash is on the left → modal opens to the RIGHT of him.
-  //   flex direction: row          (companion on left, modal grows right)
+  // When drawer opens, immediately show the panel.
+  // When it closes, panelVisible lingers for 340ms (CSS exit animation).
+  useEffect(() => {
+    if (drawerOpen || checkInVisible) {
+      if (closingTimerRef.current) clearTimeout(closingTimerRef.current)
+      setPanelVisible(true)
+    }
+  }, [drawerOpen, checkInVisible])
+
   const panelOpen = drawerOpen || checkInVisible
   const flexDirection = anchor === 'right' ? 'row-reverse' : 'row'
   const vertAlign = verticalAnchor === 'top' ? 'flex-start' : 'flex-end'
 
   const handleAppContainerClick = useCallback((e: React.MouseEvent) => {
-    // If user clicked inside companion, side panel, checkin prompt, or notification, do not close
     const target = e.target as HTMLElement
     const isInsideContent = !!(
       target.closest('.companion-column') ||
       target.closest('.side-panel') ||
-      target.closest('.notification-toast')
+      target.closest('.notif-stack')
     )
 
     if (!isInsideContent && (drawerOpen || checkInVisible)) {
-      setDrawerOpen(false)
-      setCheckInVisible(false)
-      window.ashAPI?.resizeWindow(120, 120, anchor, verticalAnchor)
+      closePanel()
     }
-  }, [drawerOpen, checkInVisible, anchor, verticalAnchor])
+  }, [drawerOpen, checkInVisible, closePanel])
 
   return (
     <div
@@ -341,38 +515,11 @@ export default function App() {
           pointerEvents: 'auto'
         }}
       >
-        {/* Notification toast — sits above companion, high z-index */}
-        {showNotification && isCountdownActive && !notif ? (
-          <Notification
-            visible={true}
-            message={`Almost done! ${focusCountdown}s left ⏳`}
-          />
-        ) : (
-          <Notification
-            visible={showNotification}
-            message={notif?.message || ''}
-            emoji={notif?.emoji}
-            isQuestion={notif?.isQuestion}
-            confirmText={notif?.confirmText}
-            cancelText={notif?.cancelText}
-            onConfirm={() => {
-              if (mood === 'waiting') {
-                setCheckInVisible(true)
-              } else {
-                changeMood('happy')
-                setTimeout(() => changeMood('idle'), 3500)
-                window.ashAPI?.dismissMood()
-              }
-            }}
-            onCancel={() => {
-              if (mood === 'waiting') {
-                handleCheckInSkip()
-              } else {
-                changeMood('angry')
-                setTimeout(() => changeMood('idle'), 3500)
-                window.ashAPI?.dismissMood()
-              }
-            }}
+        {/* Notification stack — sits above companion */}
+        {showNotification && (
+          <NotificationStack
+            notifications={notifQueue}
+            onDismiss={dismissNotif}
           />
         )}
 
@@ -390,11 +537,11 @@ export default function App() {
         />
       </div>
 
-      {/* ── Side panel — drawer or check-in, beside Ash ── */}
-      {panelOpen && (
+      {/* ── Side panel — always in DOM, shown/hidden via CSS to prevent flash-glitch ── */}
+      {panelVisible && (
         <div
-          className={`side-panel anchor-${anchor} vertical-${verticalAnchor}`}
-          style={{ pointerEvents: 'auto' }}
+          className={`side-panel anchor-${anchor} vertical-${verticalAnchor} ${!panelOpen ? 'side-panel-closing' : ''}`}
+          style={{ pointerEvents: panelOpen ? 'auto' : 'none' }}
         >
           {checkInVisible ? (
             <CheckInPrompt

@@ -26,17 +26,26 @@ tell application "System Events"
 	end try
 end tell
 set tabName to ""
-if appName is "Google Chrome" then
+if appName is in {"Google Chrome", "Brave Browser", "Microsoft Edge", "Arc", "Opera", "Orion"} then
 	try
-		tell application "Google Chrome"
+		tell application appName
 			if (count of windows) > 0 then
 				set tabName to title of active tab of front window
+			end if
+		end tell
+	end try
+else if appName is "Safari" then
+	try
+		tell application "Safari"
+			if (count of windows) > 0 then
+				set tabName to name of current tab of front window
 			end if
 		end tell
 	end try
 end if
 return appName & "||" & tabName & "||" & item 1 of winBounds & "," & item 2 of winBounds & "," & item 3 of winBounds & "," & item 4 of winBounds
 `
+
 
 export function startContextMonitoring(win: BrowserWindow) {
   if (contextTimer) return

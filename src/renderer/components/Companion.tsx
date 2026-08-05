@@ -21,9 +21,11 @@ import angryPng from '../assets/sprites/status_pngs/angry.png'
 import happyPng from '../assets/sprites/status_pngs/happy.png'
 import concernedPng from '../assets/sprites/status_pngs/concerned.png'
 
-const PNG_SEQUENCE_MOODS: Mood[] = ['idle', 'walking', 'walking-left', 'thinking', 'success', 'sleeping', 'drag']
-const GIF_MOODS: Mood[] = ['thirsty', 'petted', 'pleased', 'waiting', 'overdue', 'bored']
-const STATIC_PNG_MOODS: Mood[] = ['angry', 'happy', 'concerned']
+const PNG_SEQUENCE_MOODS: Mood[] = ['idle', 'walking', 'walking-left', 'thinking', 'success', 'sleeping', 'drag', 'bored']
+const GIF_MOODS: Mood[] = ['thirsty', 'petted', 'pleased', 'waiting', 'overdue']
+const STATIC_PNG_MOODS: Mood[] = ['angry', 'happy', 'concerned', 'alert', 'remind']
+
+
 
 /**
  * Companion — renders Ash with mood-based animation.
@@ -99,7 +101,28 @@ export default function Companion({ mood, onPet, onToggleDrawer, onDoubleClick, 
         }
       }, 300)
       return () => clearInterval(interval)
-    } else if (isIdle || isSleeping || isBored) {
+    } else if (isSleeping) {
+      setAnimFrame(1)
+      let t1: ReturnType<typeof setTimeout>
+      let t2: ReturnType<typeof setTimeout>
+      let loopInterval: ReturnType<typeof setInterval>
+
+      t1 = setTimeout(() => {
+        setAnimFrame(2)
+        t2 = setTimeout(() => {
+          setAnimFrame(3)
+          loopInterval = setInterval(() => {
+            setAnimFrame((f) => (f === 3 ? 4 : 3))
+          }, 2500)
+        }, 1200)
+      }, 1200)
+
+      return () => {
+        clearTimeout(t1)
+        clearTimeout(t2)
+        clearInterval(loopInterval)
+      }
+    } else if (isIdle || isBored) {
       const interval = setInterval(() => setAnimFrame((f) => (f % 2) + 1), 1200)
       return () => clearInterval(interval)
     }
@@ -149,12 +172,13 @@ export default function Companion({ mood, onPet, onToggleDrawer, onDoubleClick, 
         return iPaths[iFrame]
       }
       if (displayMood === 'sleeping') {
-        const slFrame = (animFrame % 2) + 1
         const slPaths: Record<number, string> = {
           1: new URL('../assets/sprites/sleep_sequence/sleep_1.png', import.meta.url).href,
           2: new URL('../assets/sprites/sleep_sequence/sleep_2.png', import.meta.url).href,
+          3: new URL('../assets/sprites/sleep_sequence/sleep_3.png', import.meta.url).href,
+          4: new URL('../assets/sprites/sleep_sequence/sleep_4.png', import.meta.url).href,
         }
-        return slPaths[slFrame]
+        return slPaths[animFrame] || slPaths[3]
       }
       if (displayMood === 'drag') {
         const dPaths: Record<number, string> = {
@@ -166,23 +190,31 @@ export default function Companion({ mood, onPet, onToggleDrawer, onDoubleClick, 
         return dPaths[dragFrame] || dPaths[1]
       }
       if (isGIFMood) {
-        if (displayMood === 'thirsty') return new URL('../assets/sprites/thirsty.gif', import.meta.url).href
-        if (displayMood === 'petted') return new URL('../assets/sprites/petted.gif', import.meta.url).href
-        if (displayMood === 'pleased') return new URL('../assets/sprites/pleased.gif', import.meta.url).href
-        if (displayMood === 'waiting') return new URL('../assets/sprites/waiting.gif', import.meta.url).href
-        if (displayMood === 'overdue') return new URL('../assets/sprites/overdue.gif', import.meta.url).href
-        if (displayMood === 'bored') return new URL('../assets/sprites/bored.gif', import.meta.url).href
+        if (displayMood === 'thirsty') return concernedPng
+        if (displayMood === 'petted' || displayMood === 'pleased') return happyPng
+        if (displayMood === 'waiting') return concernedPng
+        if (displayMood === 'bored') {
+          const slPaths: Record<number, string> = {
+            1: new URL('../assets/sprites/sleep_sequence/sleep_1.png', import.meta.url).href,
+            2: new URL('../assets/sprites/sleep_sequence/sleep_2.png', import.meta.url).href,
+            3: new URL('../assets/sprites/sleep_sequence/sleep_3.png', import.meta.url).href,
+            4: new URL('../assets/sprites/sleep_sequence/sleep_4.png', import.meta.url).href,
+          }
+          return slPaths[animFrame] || slPaths[3]
+        }
+        if (displayMood === 'overdue') return angryPng
       }
       if (isStaticPNGMood) {
         if (displayMood === 'angry') return angryPng
         if (displayMood === 'happy') return happyPng
-        if (displayMood === 'concerned') return concernedPng
+        if (displayMood === 'concerned' || displayMood === 'alert' || displayMood === 'remind') return concernedPng
       }
+      return concernedPng
     } catch {
-      return undefined
+      return concernedPng
     }
-    return undefined
   }, [displayMood, animFrame, isPNGMood, isGIFMood, isStaticPNGMood, dragFrame])
+
 
   useEffect(() => {
     setImageError(false)

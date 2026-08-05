@@ -17,10 +17,10 @@ export function getNotificationForMood(
       if (detail === 'water') {
         return {
           message: pickRandom([
-            "Psst — go grab some water 💧",
+            "Psst, go grab some water",
             "Hydration check! When did you last drink?",
             "Your body is 60% water. Top it up!",
-            "Ash is thirsty. Are you? 🥤"
+            "Ash is thirsty. Are you?"
           ]),
           emoji: '💧',
           isQuestion: true,
@@ -31,9 +31,9 @@ export function getNotificationForMood(
       if (detail === 'screen') {
         return {
           message: pickRandom([
-            "You've been at this a while — take a breather 🧘",
-            "Screen break time! Stand up & stretch 🙆",
-            "Your eyes need a rest. Look away for a sec 👀",
+            "You've been at this a while — take a breather",
+            "Screen break time! Stand up & stretch",
+            "Your eyes need a rest. Look away for a sec",
             "Ash's eyes are tired. Let's take a break!"
           ]),
           emoji: '👀',
@@ -49,13 +49,13 @@ export function getNotificationForMood(
     case 'angry':
       if (detail === 'distraction') {
         return {
-          message: 'Hey! Less streaming, more working on your tasks! 😠',
+          message: 'Hey! Less streaming, more working on your tasks!',
           emoji: '😠'
         }
       }
       if (detail === 'reset') {
         return {
-          message: 'Giving up on your focus session already? Pathetic. 🙄',
+          message: 'Giving up on your focus session already? Pathetic.',
           emoji: '🙄'
         }
       }
@@ -66,7 +66,7 @@ export function getNotificationForMood(
     case 'happy':
       if (detail === 'focus') {
         return {
-          message: 'Great job focusing! Keep it up! ✨',
+          message: 'Great job focusing! Keep it up!',
           emoji: '🌟'
         }
       }
@@ -82,7 +82,7 @@ export function getNotificationForMood(
     case 'thirsty': // fallback
       return {
         message: pickRandom([
-          "Psst — go grab some water 💧",
+          "Psst — go grab some water",
           "Hydration check! When did you last drink?"
         ]),
         emoji: '💧',
@@ -92,32 +92,32 @@ export function getNotificationForMood(
       }
     case 'alert':
       return {
-        message: detail ? detail : '📅 You have a meeting coming up!',
+        message: detail ? detail : 'You have a meeting coming up!',
         emoji: '📅'
       }
     case 'overdue':
-      return { message: "Tasks from yesterday are still waiting 📋", emoji: '📋' }
+      return { message: "Tasks from yesterday are still waiting", emoji: '📋' }
     case 'success':
       return {
-        message: 'Good job! Keep it up! 🌟',
+        message: 'Good job! Keep it up!',
         emoji: '✨'
       }
     case 'bored':
       return {
         message: pickRandom([
-          "Poke me, I'm getting lonely over here 🐾",
+          "Poke me, I'm getting lonely over here",
           "Helloooo? Anyone there?",
           "I'm bored. Are you bored? Let's be bored together.",
-          "Come back! I miss you 🥺"
+          "Come back! I miss you"
         ]),
         emoji: '😴'
       }
     case 'waiting':
       return {
         message: pickRandom([
-          "Ready for the next hunt? 🐺",
+          "Ready for the next hunt?",
           "Woof! What are we tackling today?",
-          "Rise & shine — let's set our sights on some goals ✨",
+          "Rise & shine — let's set our sights on some goals",
           "A new day, a fresh trail to track. What's the plan?"
         ]),
         emoji: '🐾',

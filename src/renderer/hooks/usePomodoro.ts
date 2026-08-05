@@ -6,8 +6,8 @@ const DEFAULT_FOCUS = 25
 const DEFAULT_BREAK = 5
 
 export function usePomodoro(
-  onFocusComplete?: () => void, 
-  onMinuteWarning?: (secsLeft: number) => void,
+  onFocusComplete?: () => void,
+  onMinuteWarning?: (secsLeft: number | null) => void,
   onReset?: () => void
 ) {
   const [focusMins, setFocusMins] = useState(DEFAULT_FOCUS)
@@ -26,6 +26,8 @@ export function usePomodoro(
           if (prev <= 1) {
             clearInterval(intervalRef.current!)
             setRunning(false)
+            // Clear warning
+            onMinuteWarning?.(null)
             if (mode === 'focus') {
               setSessions(s => s + 1)
               setTotalFocusSecs(t => t + focusMins * 60)
@@ -38,8 +40,13 @@ export function usePomodoro(
             }
             return 0
           }
+          // Fire warning for the last 60s of a focus session
           if (mode === 'focus' && prev <= 61 && prev > 0) {
             onMinuteWarning?.(prev - 1)
+          }
+          // Clear warning once we're above 61s (e.g. after reset or mode change)
+          if (mode === 'focus' && prev > 61) {
+            onMinuteWarning?.(null)
           }
           return prev - 1
         })
@@ -56,12 +63,14 @@ export function usePomodoro(
     setRunning(false)
     setMode('break')
     setTimeLeft(breakMins * 60)
+    onMinuteWarning?.(null)
   }
 
   const switchToFocus = () => {
     setRunning(false)
     setMode('focus')
     setTimeLeft(focusMins * 60)
+    onMinuteWarning?.(null)
   }
 
   const setTimes = (f: number, b: number) => {
@@ -69,6 +78,7 @@ export function usePomodoro(
     setBreakMins(b)
     if (mode === 'focus') setTimeLeft(f * 60)
     else setTimeLeft(b * 60)
+    onMinuteWarning?.(null)
   }
 
   const reset = () => {
@@ -79,11 +89,13 @@ export function usePomodoro(
     }
     const wasFocus = mode === 'focus'
     const wasRunning = timeLeft < (wasFocus ? focusMins * 60 : breakMins * 60)
-    
+
     if (wasFocus) setTimeLeft(focusMins * 60)
     else setTimeLeft(breakMins * 60)
-    
-    onMinuteWarning?.(0)
+
+    // Always clear the countdown warning on reset
+    onMinuteWarning?.(null)
+
     if (wasFocus && wasRunning) {
       onReset?.()
     }

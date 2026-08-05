@@ -65,11 +65,7 @@ export function recalculateTimers(win: BrowserWindow): void {
   startTimers(win)
 }
 
-/** Reset the water timer (called after pet/dismiss) */
-export function resetWaterTimer(win: BrowserWindow): void {
-  if (waterTimer) clearInterval(waterTimer)
-  startWaterTimer(win)
-}
+
 
 /** Record an interaction (resets boredom timer) */
 export function recordInteraction(win: BrowserWindow): void {
@@ -77,22 +73,32 @@ export function recordInteraction(win: BrowserWindow): void {
   resetBoredomWatch(win)
 }
 
-// ── Water Timer ──────────────────────────────────────
+let lastWaterTrigger = 0
 
 function startWaterTimer(win: BrowserWindow): void {
   const settings = getSettings()
   if (settings.waterEnabled === false) return
 
-  const intervalMs = (settings.waterIntervalMinutes || 30) * 60 * 1000
-
   waterTimer = setInterval(() => {
+    const s = getSettings()
+    if (s.waterEnabled === false) return
     if (isQuietHoursActive()) return
-    if (!win.isDestroyed()) {
+
+    const intervalMs = (s.waterIntervalMinutes || 30) * 60 * 1000
+    const now = Date.now()
+
+    if (now - lastWaterTrigger >= intervalMs && !win.isDestroyed()) {
+      lastWaterTrigger = now
       setIsNotificationActive(true)
       win.webContents.send('mood:change', 'concerned', 'water')
     }
-  }, intervalMs)
+  }, 10 * 1000)
 }
+
+export function resetWaterTimer(win: BrowserWindow): void {
+  lastWaterTrigger = Date.now()
+}
+
 
 // ── Task & Goal Check-in Cadence Timer ───────────────
 

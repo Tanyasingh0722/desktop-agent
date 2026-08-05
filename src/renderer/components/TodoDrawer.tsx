@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
-import { Home, ClipboardList, Clock, Settings as SettingsIcon, Mic, MicOff, Sparkles, Trash2, Layers, Check, ShieldAlert } from 'lucide-react'
+import { Home, ClipboardList, Clock, Settings as SettingsIcon, Mic, MicOff, Sparkles, Trash2, Layers, Check, ShieldAlert, RotateCcw } from 'lucide-react'
 import type { Task, Settings } from '../types'
 import { isMultiActionInput, parseTasksWithLLM, cleanTaskPhrase } from '../lib/task-parser'
 
@@ -28,6 +28,9 @@ function formatDate(d: Date) {
 }
 function formatTime(d: Date) {
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+}
+function formatTimeMono(d: Date) {
+  return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
 }
 function relativeDate(isoDate: string): string {
   const today = new Date().toISOString().split('T')[0]
@@ -81,19 +84,13 @@ function GoalTab() {
 
   return (
     <div className="drawer-tab goal-tab">
-      <div className="goal-datetime">
-        <span className="goal-date">{formatDate(now)}</span>
-        <span className="goal-dot">•</span>
-        <span className="goal-time">{formatTime(now)}</span>
-      </div>
-
       {editing ? (
         <textarea
           ref={textareaRef}
           className="goal-textarea"
           value={goal}
           onChange={e => setGoal(e.target.value)}
-          placeholder="What's the plan?"
+          placeholder="TYPE YOUR QUEST..."
           onBlur={save}
           onKeyDown={e => {
             if (e.key === 'Enter' && !e.shiftKey) {
@@ -108,10 +105,10 @@ function GoalTab() {
           <div
             className={`goal-display ${goal ? 'has-goal' : 'empty-goal'}`}
             onClick={() => { if (!completed) setEditing(true) }}
-            title={completed ? "Goal completed!" : "Click to edit"}
+            title={completed ? "Quest complete!" : "Click to edit"}
           >
             <span className={completed ? "goal-completed-text" : ""}>
-              {goal || "What's the plan?"}
+              {goal || "TYPE YOUR QUEST..."}
             </span>
             {goal && !completed && (
               <span className="goal-tick" onClick={completeGoal} title="Mark as done" style={{cursor: 'pointer'}}>
@@ -126,7 +123,7 @@ function GoalTab() {
           </div>
           {completed && (
             <button className="goal-clear-btn" onClick={clearGoal}>
-              Add a new goal
+              ＋ New Quest
             </button>
           )}
         </>
@@ -408,7 +405,7 @@ function TasksTab({
         {/* Active / Today tasks */}
         {activeTasks.length > 0 && (
           <div className="tasks-section">
-            <div className="tasks-section-label">DAILY TASKS</div>
+            <div className="tasks-section-label">⚔ Active Quests</div>
             {activeTasks.map((t, index) => (
               <SwipeableTaskRow 
                 key={t.id} 
@@ -428,7 +425,7 @@ function TasksTab({
         {/* Past / Carried-over tasks */}
         {pastTasks.length > 0 && (
           <div className="tasks-section">
-            <div className="tasks-section-label">PAST (OVERDUE)</div>
+            <div className="tasks-section-label">⚠ Overdue Quests</div>
             {pastTasks.map(t => (
               <SwipeableTaskRow key={t.id} task={t} onToggle={handleToggle} onDelete={() => onDeleteTask(t.id)} sub={relativeDate(t.createdDate)} past />
             ))}
@@ -443,7 +440,7 @@ function TasksTab({
               onClick={() => setDoneExpanded(!doneExpanded)}
               style={{ cursor: 'pointer', display: 'flex', justifyContent: 'space-between' }}
             >
-              <span>DONE ({doneTasks.length})</span>
+              <span>✓ Completed ({doneTasks.length})</span>
               <span>{doneExpanded ? '▲' : '▼'}</span>
             </div>
             {doneExpanded && (
@@ -457,7 +454,7 @@ function TasksTab({
         )}
 
         {tasks.length === 0 && (
-          <div className="tasks-empty">No tasks yet. Add one below!</div>
+          <div className="tasks-empty">✦ No active quests{`\n`}Summon one below!</div>
         )}
       </div>
 
@@ -474,7 +471,7 @@ function TasksTab({
         <input
           ref={inputRef}
           className="add-task-input"
-          placeholder={isParsing ? "Splitting tasks with AI..." : isListening ? "Listening..." : "Add task or free-form text..."}
+          placeholder={isParsing ? "PARSING QUEST..." : isListening ? "LISTENING..." : "SUMMON NEW QUEST..."}
           value={input}
           disabled={isParsing}
           onChange={e => setInput(e.target.value)}
@@ -559,10 +556,10 @@ function SwipeableTaskRow({ task, index, onToggle, onDelete, sub, past, done, on
     >
       <div className="task-actions-bg">
         <button className="task-action-btn action-complete" onClick={() => { onToggle(task); setOffset(0) }}>
-          {done ? '↺' : '✓'}
+          {done ? <RotateCcw size={20} strokeWidth={2.5} /> : <Check size={20} strokeWidth={2.5} />}
         </button>
         <button className="task-action-btn action-delete" onClick={onDelete}>
-          🗑
+          <Trash2 size={20} strokeWidth={2.5} />
         </button>
       </div>
 
@@ -575,13 +572,12 @@ function SwipeableTaskRow({ task, index, onToggle, onDelete, sub, past, done, on
       >
         {index !== undefined && (
           <div 
-            className="task-handle" 
+            className="task-num-badge"
             onPointerEnter={() => setIsDraggable(true)}
             onPointerLeave={() => setIsDraggable(false)}
             onPointerDown={(e) => e.stopPropagation()}
-            style={{ padding: '0 8px 0 0', cursor: 'grab', color: '#888', fontWeight: 500, userSelect: 'none', display: 'flex', alignItems: 'center' }}
           >
-            {index + 1}.
+            {index + 1}
           </div>
         )}
         <div className={`task-checkbox ${done ? 'checked' : ''}`}>
@@ -636,7 +632,7 @@ function FocusTab({ pomodoro }: { pomodoro: any }) {
 
   return (
     <div className="drawer-tab focus-tab">
-      <div className="focus-label">DEEP WORK</div>
+      <div className="focus-quest-label">QUEST FOCUS</div>
 
       {/* Ring */}
       <div className="focus-ring-wrap">
@@ -677,7 +673,7 @@ function FocusTab({ pomodoro }: { pomodoro: any }) {
               {pad(mins)}:{pad(secs)}
             </div>
           )}
-          <div className="focus-mode-label">{mode === 'focus' ? 'FOCUS' : 'BREAK'}</div>
+          <div className="focus-mode-label">{mode === 'focus' ? 'POMODORO' : 'REST'}</div>
         </div>
       </div>
 
@@ -696,15 +692,15 @@ function FocusTab({ pomodoro }: { pomodoro: any }) {
       {/* Buttons */}
       <div className="focus-buttons">
         <button className="focus-btn-primary" onClick={startStop}>
-          {running ? 'Pause' : mode === 'focus' ? 'Start Focus' : 'Start Break'}
+          {running ? '⏸ PAUSE' : mode === 'focus' ? '▶ START DEEP WORK' : '▶ START REST'}
         </button>
         {timeLeft !== totalSecs ? (
           <button className="focus-btn-secondary" onClick={pomodoro.reset}>
-            Reset
+            ↺ RESET
           </button>
         ) : (
           <button className="focus-btn-secondary" onClick={mode === 'focus' ? switchToBreak : switchToFocus}>
-            {mode === 'focus' ? 'Break' : 'Focus'}
+            {mode === 'focus' ? 'SHORT BREAK' : '▶ FOCUS MODE'}
           </button>
         )}
       </div>
@@ -722,17 +718,24 @@ function SettingsTab() {
     window.ashAPI?.getSettings().then(setSettings)
   }, [])
 
+
   const handleChange = (field: keyof Settings, value: any) => {
     if (!settings) return
     setErrorMsg(null)
+    console.log('[DEBUG handleChange] field:', field, 'value:', value);
     setSettings({ ...settings, [field]: value })
   }
 
   const handleSave = async () => {
     if (!settings) return
 
-    // 5. VALIDATION: Clamp / Validate min/max bounds (5 to 240 mins)
-    const clamp = (val: number, min = 5, max = 240) => Math.min(Math.max(val || min, min), max)
+    // 5. VALIDATION: Clamp / Validate min/max bounds (1 to 240 mins)
+    const clamp = (val: any, min = 1, max = 240) => {
+      let num = Number(val);
+      if (isNaN(num)) num = min;
+      return Math.min(Math.max(num || min, min), max);
+    }
+
 
     const validatedWater = clamp(settings.waterIntervalMinutes)
     const validatedScreen = clamp(settings.screenTimeThresholdMinutes)
@@ -746,6 +749,10 @@ function SettingsTab() {
       snoozeDurationMinutes: Math.max(1, settings.snoozeDurationMinutes || 10),
       snoozeThreshold: Math.max(1, settings.snoozeThreshold || 3)
     }
+
+    console.log('[DEBUG handleSave] BEFORE SAVE settings:', settings);
+    console.log('[DEBUG handleSave] clamp water:', validatedWater, 'screen:', validatedScreen, 'task:', validatedTaskGoal);
+    console.log('[DEBUG handleSave] AFTER SAVE updatedSettings:', updatedSettings);
 
     setIsSaving(true)
     setSettings(updatedSettings)
@@ -785,11 +792,11 @@ function SettingsTab() {
           <input
             type="number"
             className="settings-input-box"
-            min="5"
+            min="1"
             max="240"
             disabled={!(settings.waterEnabled ?? true)}
             value={settings.waterIntervalMinutes}
-            onChange={e => handleChange('waterIntervalMinutes', Number(e.target.value))}
+            onChange={e => handleChange('waterIntervalMinutes', Math.max(1, Number(e.target.value)))}
           />
         </div>
 
@@ -809,11 +816,11 @@ function SettingsTab() {
           <input
             type="number"
             className="settings-input-box"
-            min="5"
+            min="1"
             max="240"
             disabled={!(settings.screenTimeEnabled ?? true)}
             value={settings.screenTimeThresholdMinutes}
-            onChange={e => handleChange('screenTimeThresholdMinutes', Number(e.target.value))}
+            onChange={e => handleChange('screenTimeThresholdMinutes', Math.max(1, Number(e.target.value)))}
           />
         </div>
 
@@ -836,11 +843,11 @@ function SettingsTab() {
           <input
             type="number"
             className="settings-input-box"
-            min="5"
+            min="1"
             max="240"
             disabled={!(settings.taskGoalCheckInEnabled ?? true)}
             value={settings.taskGoalCheckInIntervalMinutes ?? 90}
-            onChange={e => handleChange('taskGoalCheckInIntervalMinutes', Number(e.target.value))}
+            onChange={e => handleChange('taskGoalCheckInIntervalMinutes', Math.max(1, Number(e.target.value)))}
           />
           <div className="settings-help-text">
             How often the wolf checks in on your to-do list and goals. Individual tasks with their own due time will still nudge separately at that time.
@@ -848,7 +855,7 @@ function SettingsTab() {
         </div>
       </div>
 
-      <hr style={{ border: 'none', borderTop: '1px solid #F3F4F6', margin: '0' }} />
+      <hr style={{ border: 'none', borderTop: '1.5px solid #111', margin: '0', opacity: 0.1 }} />
 
       {/* 2. SNOOZE BEHAVIOR */}
       <div className="settings-group">
@@ -864,15 +871,16 @@ function SettingsTab() {
             <div className="stepper-box">
               <button
                 className="stepper-btn"
-                onClick={() => handleChange('snoozeDurationMinutes', Math.max(5, (settings.snoozeDurationMinutes || 10) - 5))}
+                onClick={() => handleChange('snoozeDurationMinutes', Math.max(1, (settings.snoozeDurationMinutes || 10) - 1))}
               >-</button>
               <span className="stepper-value">{settings.snoozeDurationMinutes || 10} min</span>
               <button
                 className="stepper-btn"
-                onClick={() => handleChange('snoozeDurationMinutes', Math.min(60, (settings.snoozeDurationMinutes || 10) + 5))}
+                onClick={() => handleChange('snoozeDurationMinutes', Math.min(60, (settings.snoozeDurationMinutes || 10) + 1))}
               >+</button>
             </div>
           </div>
+
 
           {/* Snoozes before mood shift stepper */}
           <div className="stepper-col">
@@ -896,7 +904,7 @@ function SettingsTab() {
         </div>
       </div>
 
-      <hr style={{ border: 'none', borderTop: '1px solid #F3F4F6', margin: '0' }} />
+      <hr style={{ border: 'none', borderTop: '1.5px solid #111', margin: '0', opacity: 0.1 }} />
 
       {/* 3. QUIET HOURS */}
       <div className="settings-group">
@@ -946,7 +954,7 @@ function SettingsTab() {
         )}
       </div>
 
-      <hr style={{ border: 'none', borderTop: '1px solid #F3F4F6', margin: '0' }} />
+      <hr style={{ border: 'none', borderTop: '1.5px solid #111', margin: '0', opacity: 0.1 }} />
 
       {/* 4. DAILY CHECK-IN */}
       <div className="settings-group">
@@ -989,6 +997,12 @@ export default function TodoDrawer({
   const [tab, setTab] = useState<Tab>('goal')
   const contentRef = useRef<HTMLDivElement>(null)
   const [panelHeight, setPanelHeight] = useState<number | 'auto'>('auto')
+  const [now, setNow] = useState(new Date())
+
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date()), 30000)
+    return () => clearInterval(t)
+  }, [])
 
   const handleTaskComplete = () => {
     onTaskComplete?.()
@@ -997,19 +1011,9 @@ export default function TodoDrawer({
   useEffect(() => {
     if (!contentRef.current) return
     const observer = new ResizeObserver((entries) => {
-      if (tab === 'tasks') {
-        const contentHeight = entries[0].target.getBoundingClientRect().height
-        const clampedHeight = Math.min(Math.max(contentHeight + 120, 360), 520)
-        setPanelHeight(clampedHeight)
-        return
-      }
-
-      // The natural height of the tab's content
       const contentHeight = entries[0].target.getBoundingClientRect().height
-      // Add 120px to account for padding + tab pill
-      const targetHeight = contentHeight + 130
-      // Clamp between 360px and 520px max to prevent clipping at top
-      const clampedHeight = Math.min(Math.max(targetHeight, 360), 520)
+      const targetHeight = contentHeight + 140
+      const clampedHeight = Math.min(Math.max(targetHeight, 520), 540)
       setPanelHeight(clampedHeight)
     })
     observer.observe(contentRef.current)
@@ -1017,51 +1021,74 @@ export default function TodoDrawer({
   }, [tab])
 
   return (
-    <div 
-      className={`drawer-panel drawer-${verticalAnchor} ${isOpen ? 'drawer-panel-open' : ''}`} 
-      style={{ 
-        pointerEvents: isOpen ? 'auto' : 'none',
-        height: panelHeight === 'auto' ? 'auto' : `${panelHeight}px`
-      }}
-    >
-      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-        {/* Close button */}
-        <button className="drawer-close" onClick={onClose} aria-label="Close">×</button>
+    <div style={{ position: 'relative' }}>
+      <div 
+        className={`drawer-panel drawer-${verticalAnchor} ${isOpen ? 'drawer-panel-open' : ''}`} 
+        style={{ 
+          pointerEvents: isOpen ? 'auto' : 'none',
+          height: panelHeight === 'auto' ? 'auto' : `${panelHeight}px`
+        }}
+      >
+        {/* ── Close button — top-right corner inside the panel ── */}
+        <button
+          className="drawer-close-external"
+          onClick={onClose}
+          aria-label="Close"
+        >×</button>
 
-        {/* Scrollable Content Wrapper */}
-        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingBottom: '16px' }}>
-          <div ref={contentRef} style={{ display: 'flex', flexDirection: 'column', height: tab === 'tasks' ? '100%' : 'auto' }}>
-            {tab === 'goal' && <GoalTab />}
-            {tab === 'tasks' && (
-              <TasksTab
-                tasks={tasks}
-                carriedTasks={carriedTasks}
-                onToggleTask={onToggleTask}
-                onDeleteTask={onDeleteTask}
-                onReorderTasks={onReorderTasks}
-                onAddTask={onAddTask}
-                onTaskComplete={handleTaskComplete}
-              />
-            )}
-            {tab === 'focus' && <FocusTab pomodoro={pomodoro} />}
-            {tab === 'settings' && <SettingsTab />}
+        <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+
+          {/* ── Quest Log Header ── */}
+          <div className="drawer-quest-header">
+            <span className="drawer-quest-date">{formatDate(now)}</span>
+            <div className="drawer-quest-title-row">
+              <span className="drawer-quest-title">
+                {tab === 'focus' ? 'Quest Focus' : 'Quest Log'}
+              </span>
+              <span className="drawer-quest-time">{formatTime(now)}</span>
+            </div>
           </div>
-        </div>
 
-        {/* Tab pill (Bottom) */}
-        <div className="drawer-tabs">
-          <button className={`drawer-tab-btn ${tab === 'goal' ? 'active' : ''}`} onClick={() => setTab('goal')}>
-            <Home size={16} />
-          </button>
-          <button className={`drawer-tab-btn ${tab === 'tasks' ? 'active' : ''}`} onClick={() => setTab('tasks')}>
-            <ClipboardList size={16} />
-          </button>
-          <button className={`drawer-tab-btn ${tab === 'focus' ? 'active' : ''}`} onClick={() => setTab('focus')}>
-            <Clock size={16} />
-          </button>
-          <button className={`drawer-tab-btn ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>
-            <SettingsIcon size={16} />
-          </button>
+          {/* Scrollable Content Wrapper */}
+          <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingBottom: '16px' }}>
+            <div ref={contentRef} style={{ display: 'flex', flexDirection: 'column', height: tab === 'tasks' ? '100%' : 'auto', padding: '0 16px' }}>
+              {tab === 'goal' && <GoalTab />}
+              {tab === 'tasks' && (
+                <TasksTab
+                  tasks={tasks}
+                  carriedTasks={carriedTasks}
+                  onToggleTask={onToggleTask}
+                  onDeleteTask={onDeleteTask}
+                  onReorderTasks={onReorderTasks}
+                  onAddTask={onAddTask}
+                  onTaskComplete={handleTaskComplete}
+                />
+              )}
+              {tab === 'focus' && <FocusTab pomodoro={pomodoro} />}
+              {tab === 'settings' && <SettingsTab />}
+            </div>
+          </div>
+
+          {/* ── Tab Bar (Bottom Pinned) ── */}
+          <div className="drawer-tabs">
+            <button className={`drawer-tab-btn ${tab === 'goal' ? 'active' : ''}`} onClick={() => setTab('goal')}>
+              <Home size={14} />
+              <span>Goal</span>
+            </button>
+            <button className={`drawer-tab-btn ${tab === 'tasks' ? 'active' : ''}`} onClick={() => setTab('tasks')}>
+              <ClipboardList size={14} />
+              <span>Quests</span>
+            </button>
+            <button className={`drawer-tab-btn ${tab === 'focus' ? 'active' : ''}`} onClick={() => setTab('focus')}>
+              <Clock size={14} />
+              <span>Timer</span>
+            </button>
+            <button className={`drawer-tab-btn ${tab === 'settings' ? 'active' : ''}`} onClick={() => setTab('settings')}>
+              <SettingsIcon size={14} />
+              <span>Config</span>
+            </button>
+          </div>
+
         </div>
       </div>
     </div>

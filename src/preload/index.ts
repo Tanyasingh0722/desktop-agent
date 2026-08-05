@@ -70,6 +70,22 @@ const api = {
     }
     ipcRenderer.on('context:update', handler)
     return () => ipcRenderer.removeListener('context:update', handler)
+  },
+
+  // ── Break window ──────────────────────────────────────────────────────────
+  /** Open the fullscreen breathing break. duration in seconds (default 180). */
+  startBreak: (durationSeconds: number = 180) =>
+    ipcRenderer.send('break:start', durationSeconds),
+  /** Close the break window (called from within the break window itself). */
+  endBreak: (completed: boolean = false) =>
+    ipcRenderer.send('break:end', completed),
+  /** Listen for the break window closing (fired in the main companion window). */
+  onBreakEnd: (callback: (completed: boolean) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, completed: boolean) => {
+      callback(completed)
+    }
+    ipcRenderer.on('break:ended', handler)
+    return () => ipcRenderer.removeListener('break:ended', handler)
   }
 }
 
