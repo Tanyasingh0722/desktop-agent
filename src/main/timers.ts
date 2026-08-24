@@ -191,8 +191,8 @@ function startScreenTimeWatch(win: BrowserWindow): void {
 
 function startRoamWatch(win: BrowserWindow): void {
   const scheduleNextRoam = () => {
-    const MIN_MS = 15 * 60 * 1000
-    const MAX_MS = 20 * 60 * 1000
+    const MIN_MS = 3 * 60 * 1000
+    const MAX_MS = 5 * 60 * 1000
     const delay = MIN_MS + Math.random() * (MAX_MS - MIN_MS)
     roamTimer = setTimeout(() => {
       if (!win.isDestroyed()) {

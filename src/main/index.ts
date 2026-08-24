@@ -76,32 +76,67 @@ function createWindow(): BrowserWindow {
     })
   })
 
-  // Handle window resize requests from renderer (for drawer expansion)
-  ipcMain.on('window:resize', (_event, width: number, height: number, anchor: 'left' | 'right' = 'right', verticalAnchor: 'top' | 'bottom' = 'bottom') => {
+  // Helper for companion anchor calculation based on unexpanded or expanded window position
+  function getCompanionAnchor(): 'left' | 'right' {
+    if (!mainWindow) return 'right'
+    const bounds = mainWindow.getBounds()
+    const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y })
+    const screenCenterX = display.workArea.x + display.workArea.width / 2
+
+    let companionCenterX: number
+    if (bounds.width <= 200) {
+      companionCenterX = bounds.x + bounds.width / 2
+    } else {
+      const rightEdge = bounds.x + bounds.width
+      companionCenterX = (rightEdge > screenCenterX) ? (rightEdge - 60) : (bounds.x + 60)
+    }
+
+    return companionCenterX < screenCenterX ? 'left' : 'right'
+  }
+
+  function getCompanionVerticalAnchor(): 'top' | 'bottom' {
+    if (!mainWindow) return 'bottom'
+    const bounds = mainWindow.getBounds()
+    const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y })
+    const screenCenterY = display.workArea.y + display.workArea.height / 2
+
+    let companionCenterY: number
+    if (bounds.height <= 200) {
+      companionCenterY = bounds.y + bounds.height / 2
+    } else {
+      const bottomEdge = bounds.y + bounds.height
+      companionCenterY = (bottomEdge > screenCenterY) ? (bottomEdge - 60) : (bounds.y + 60)
+    }
+
+    return companionCenterY < screenCenterY ? 'top' : 'bottom'
+  }
+
+  // Handle window resize requests from renderer (for drawer / modal expansion)
+  ipcMain.on('window:resize', (_event, width: number, height: number, anchor?: 'left' | 'right', verticalAnchor?: 'top' | 'bottom') => {
     if (mainWindow) {
       const bounds = mainWindow.getBounds()
-      let newX = bounds.x
-      let newY: number
 
-      if (verticalAnchor === 'top') {
-        // Companion is in TOP half → expand downward (keep top edge fixed)
-        newY = bounds.y
-      } else {
-        // Companion is in BOTTOM half → expand upward (keep bottom edge fixed)
-        newY = bounds.y + bounds.height - height
-      }
+      // Respect passed anchor/verticalAnchor from renderer if provided, else compute
+      const effectiveAnchor = anchor || getCompanionAnchor()
+      const effectiveVerticalAnchor = verticalAnchor || getCompanionVerticalAnchor()
 
-      if (anchor === 'right') {
-        // Expand leftward so the right edge stays in place
-        newX = bounds.x + bounds.width - width
-      } else {
-        // Expand rightward so the left edge stays in place
-        newX = bounds.x
-      }
+      // Calculate where the companion outer edge sits on screen to keep companion stationary
+      const fixedX = effectiveAnchor === 'right' ? (bounds.x + bounds.width) : bounds.x
+      const fixedY = effectiveVerticalAnchor === 'bottom' ? (bounds.y + bounds.height) : bounds.y
+
+      let newX = effectiveAnchor === 'right' ? (fixedX - width) : fixedX
+      let newY = effectiveVerticalAnchor === 'bottom' ? (fixedY - height) : fixedY
+
+      // Clamp target bounds to display work area
+      const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y })
+      const { x: wa_x, y: wa_y, width: wa_w, height: wa_h } = display.workArea
+
+      newX = Math.max(wa_x, Math.min(wa_x + wa_w - width, newX))
+      newY = Math.max(wa_y, Math.min(wa_y + wa_h - height, newY))
 
       mainWindow.setBounds({
-        x: newX,
-        y: newY,
+        x: Math.round(newX),
+        y: Math.round(newY),
         width,
         height
       })
@@ -116,9 +151,19 @@ function createWindow(): BrowserWindow {
   ipcMain.on('window:move-by', (_event, dx: number, dy: number) => {
     if (mainWindow) {
       const bounds = mainWindow.getBounds()
+      const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y })
+      const { x: wa_x, y: wa_y, width: wa_w, height: wa_h } = display.workArea
+
+      let targetX = Math.round(bounds.x + dx)
+      let targetY = Math.round(bounds.y + dy)
+
+      // Clamp target coordinates so companion box stays safely within the work area
+      targetX = Math.max(wa_x, Math.min(wa_x + wa_w - bounds.width, targetX))
+      targetY = Math.max(wa_y, Math.min(wa_y + wa_h - bounds.height, targetY))
+
       mainWindow.setBounds({
-        x: Math.round(bounds.x + dx),
-        y: Math.round(bounds.y + dy),
+        x: targetX,
+        y: targetY,
         width: bounds.width,
         height: bounds.height
       })
@@ -133,6 +178,7 @@ function createWindow(): BrowserWindow {
     if (activeAnimation) {
       clearTimeout(activeAnimation)
       activeAnimation = null
+      isRoaming = false
     }
 
     const startBounds = mainWindow.getBounds()
@@ -162,6 +208,7 @@ function createWindow(): BrowserWindow {
         activeAnimation = setTimeout(animate, 16) // ~60fps
       } else {
         activeAnimation = null
+        isRoaming = false
         if (onComplete) onComplete()
       }
     }
@@ -193,35 +240,23 @@ function createWindow(): BrowserWindow {
     let targetX = bounds.x
     const targetY = bounds.y // Strictly horizontal walking — vertical stays fixed
 
-    if (consecutiveEvadeCount >= 3) {
-      // User has been working here and bumped Ash 3 times.
-      // Walk directly to the far opposite end corner!
-      consecutiveEvadeCount = 0
-      const isCursorOnRightHalf = cursor.x > (wa_x + wa_w / 2)
-      if (isCursorOnRightHalf) {
-        targetX = wa_x + 20 // Far left corner
-      } else {
-        targetX = wa_x + wa_w - bounds.width - 20 // Far right corner
-      }
+    // Smooth horizontal shift (200px) away from cursor
+    const deltaX = (bounds.x + bounds.width / 2) - cursor.x
+    const SHIFT_DIST = 200
+
+    if (deltaX >= 0) {
+      targetX = bounds.x + SHIFT_DIST
     } else {
-      // Short horizontal shift (200px) away from cursor
-      const deltaX = (bounds.x + bounds.width / 2) - cursor.x
-      const SHIFT_DIST = 200
+      targetX = bounds.x - SHIFT_DIST
+    }
 
-      if (deltaX >= 0) {
-        targetX = bounds.x + SHIFT_DIST
-      } else {
-        targetX = bounds.x - SHIFT_DIST
-      }
+    // Clamp within work area bounds
+    targetX = Math.max(wa_x + 10, Math.min(wa_x + wa_w - bounds.width - 10, targetX))
 
-      // Clamp within work area bounds
+    // If hitting wall, step in opposite direction
+    if (Math.abs(targetX - bounds.x) < 20) {
+      targetX = deltaX >= 0 ? bounds.x - SHIFT_DIST : bounds.x + SHIFT_DIST
       targetX = Math.max(wa_x + 10, Math.min(wa_x + wa_w - bounds.width - 10, targetX))
-
-      // If hitting wall, step in opposite direction
-      if (Math.abs(targetX - bounds.x) < 20) {
-        targetX = deltaX >= 0 ? bounds.x - SHIFT_DIST : bounds.x + SHIFT_DIST
-        targetX = Math.max(wa_x + 10, Math.min(wa_x + wa_w - bounds.width - 10, targetX))
-      }
     }
 
     const distance = Math.abs(targetX - bounds.x)
@@ -300,25 +335,14 @@ function createWindow(): BrowserWindow {
     }
   })
 
-  // Reliable anchor calculation based on COMPANION POSITION (checks top-left/bottom-right edge)
+  // Reliable anchor calculation based on COMPANION POSITION
   ipcMain.handle('window:get-anchor', () => {
-    if (!mainWindow) return 'right'
-    const bounds = mainWindow.getBounds()
-    const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y })
-    const screenCenterX = display.bounds.x + display.bounds.width / 2
-    // Use right edge if win is on right side, left edge if on left side
-    const winEdgeX = (bounds.x + bounds.width - 60) > screenCenterX ? (bounds.x + bounds.width) : bounds.x
-    return winEdgeX < screenCenterX ? 'left' : 'right'
+    return getCompanionAnchor()
   })
 
   // Vertical anchor — based on COMPANION POSITION
   ipcMain.handle('window:get-vertical-anchor', () => {
-    if (!mainWindow) return 'bottom'
-    const bounds = mainWindow.getBounds()
-    const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y })
-    const screenCenterY = display.bounds.y + display.bounds.height / 2
-    const winEdgeY = (bounds.y + bounds.height - 60) > screenCenterY ? (bounds.y + bounds.height) : bounds.y
-    return winEdgeY < screenCenterY ? 'top' : 'bottom'
+    return getCompanionVerticalAnchor()
   })
 
   mainWindow.on('closed', () => {
@@ -396,27 +420,15 @@ app.whenReady().then(async () => {
       cursor.y >= bounds.y && cursor.y <= bounds.y + bounds.height
 
     if (isNear) {
-      // Intent tracking: if cursor slows down or stops near/over Ash, user wants to interact!
-      if (cursorSpeed < 10 || isDirectlyOver) {
-        if (nearStationaryStartTime === null) {
-          nearStationaryStartTime = now
-        }
-        // Freeze movement if stationary for > 80ms or directly over Ash so user can double-click/interact!
-        if (now - nearStationaryStartTime > 80 || isDirectlyOver) {
-          return
-        }
-      } else {
-        // Cursor is moving actively towards/past Ash — reset catch window
-        nearStationaryStartTime = null
+      if (isDirectlyOver) {
+        // Freeze movement if mouse is directly hovering over Ash so user can pet/click/interact
+        return
       }
-
-      // System active (idleTime === 0) & cooldown passed -> flee
+      // System active (idleTime === 0) & cooldown passed -> evade away smoothly
       if (idleTime === 0 && now - lastMoveByActivity > EVASION_COOLDOWN) {
         lastMoveByActivity = now
         triggerRoam()
       }
-    } else {
-      nearStationaryStartTime = null
     }
   }, 80)
 

@@ -1,9 +1,10 @@
 # Dependencies
 node_modules/
 
-# Build output
+# Build artifacts & temp configs
 out/
 dist/
+electron.vite.config.*.mjs
 
 # Environment
 .env

@@ -83,7 +83,13 @@ export default function App() {
 
   const dismissNotif = useCallback((id: string) => {
     activeNotifKeys.current.clear()
-    setNotifQueue(prev => prev.filter(n => n.id !== id))
+    setNotifQueue(prev => {
+      const next = prev.filter(n => n.id !== id)
+      if (next.length === 0) {
+        window.ashAPI?.dismissMood()
+      }
+      return next
+    })
   }, [])
 
 
@@ -232,8 +238,9 @@ export default function App() {
     })
   }, []) // no deps — only reads from main process
 
-  // ── Sync anchor when Ash finishes roaming ──────────
+  // ── Sync anchor on mount and when Ash finishes roaming ──────────
   useEffect(() => {
+    refreshAnchor()
     const unsub = window.ashAPI?.onAnchorUpdate(() => {
       refreshAnchor()
     })
@@ -380,7 +387,7 @@ export default function App() {
         target.closest('.notif-stack')
       )
 
-      if (isInteractive || drawerOpen || checkInVisible) {
+      if (isInteractive || drawerOpen || checkInVisible || e.buttons > 0) {
         window.ashAPI?.setIgnoreMouseEvents(false)
       } else {
         window.ashAPI?.setIgnoreMouseEvents(true, { forward: true })
@@ -418,8 +425,10 @@ export default function App() {
   }, [drawerOpen, checkInVisible, closePanel])
 
   const handleCompanionClick = useCallback(() => {
+    refreshAnchor()
     if (mood === 'sleeping') {
       changeMood('idle')
+      window.ashAPI?.dismissMood()
       return
     }
     if (mood === 'waiting') {
@@ -427,7 +436,7 @@ export default function App() {
     } else {
       setDrawerOpen((prev) => !prev)
     }
-  }, [mood, changeMood])
+  }, [mood, changeMood, refreshAnchor])
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault()
