@@ -219,6 +219,7 @@ function createWindow(): BrowserWindow {
   triggerRoam = () => {
     if (!mainWindow || isNotificationActive || isRoaming) return
     isRoaming = true
+    recordInteraction(mainWindow)
 
     const bounds = mainWindow.getBounds()
     const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y })

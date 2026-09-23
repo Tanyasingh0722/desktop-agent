@@ -101,7 +101,7 @@ export default function Companion({ mood, onPet, onToggleDrawer, onDoubleClick, 
         }
       }, 300)
       return () => clearInterval(interval)
-    } else if (isSleeping) {
+    } else if (isSleeping || isBored) {
       setAnimFrame(1)
       let t1: ReturnType<typeof setTimeout>
       let t2: ReturnType<typeof setTimeout>
@@ -122,7 +122,7 @@ export default function Companion({ mood, onPet, onToggleDrawer, onDoubleClick, 
         clearTimeout(t2)
         clearInterval(loopInterval)
       }
-    } else if (isIdle || isBored) {
+    } else if (isIdle) {
       const interval = setInterval(() => setAnimFrame((f) => (f % 2) + 1), 1200)
       return () => clearInterval(interval)
     }

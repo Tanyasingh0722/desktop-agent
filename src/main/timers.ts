@@ -142,7 +142,7 @@ function startCheckInWatch(win: BrowserWindow): void {
 
 // ── Boredom Timer ────────────────────────────────────
 
-const BOREDOM_THRESHOLD = 30 * 60 * 1000 // 30 minutes
+const BOREDOM_THRESHOLD = 15 * 60 * 1000 // 15 minutes
 
 function startBoredomWatch(win: BrowserWindow): void {
   boredomTimer = setTimeout(() => {
