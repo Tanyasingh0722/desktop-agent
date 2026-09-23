@@ -65,8 +65,6 @@ body,
   align-items: center;
   justify-content: center;
   cursor: grab;
-  /* Prevent GPU-layer ghosting of children (ghost-trigger-btn) when parent window resizes */
-  isolation: isolate;
 }
 
 .companion-wrapper:active {

@@ -87,12 +87,19 @@ export function useMood() {
     let flashCount = 0
     if (mood === 'remind') {
       interval = setInterval(() => {
-        setVisualOverride(prev => prev === 'idle' ? null : 'idle')
+        setVisualOverride(prev => {
+          // Do not interrupt an active walking animation
+          if (prev !== null && prev !== 'idle') return prev
+          return prev === 'idle' ? null : 'idle'
+        })
         flashCount++
         // Stop flashing after 3 full cycles (6 toggles) and remain in remind
         if (flashCount >= 6) {
           if (interval) clearInterval(interval)
-          setVisualOverride(null)
+          setVisualOverride(prev => {
+            if (prev !== null && prev !== 'idle') return prev
+            return null
+          })
           
           // Optionally auto-dismiss after 6 seconds (if it's not a sticky permission request)
           if (detail !== 'ide-permission') {

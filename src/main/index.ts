@@ -32,6 +32,7 @@ function createWindow(): BrowserWindow {
     height: WINDOW_SIZE,
     x: screenWidth - WINDOW_SIZE - 40,
     y: screenHeight - WINDOW_SIZE - 40,
+    show: false,
     type: 'panel', // macOS: prevents hiding in Mission Control
     transparent: true,
     frame: false,
@@ -74,6 +75,7 @@ function createWindow(): BrowserWindow {
       width: bounds.width,
       height: bounds.height
     })
+    mainWindow.show()
   })
 
   // Helper for companion anchor calculation based on unexpanded or expanded window position
@@ -151,15 +153,9 @@ function createWindow(): BrowserWindow {
   ipcMain.on('window:move-by', (_event, dx: number, dy: number) => {
     if (mainWindow) {
       const bounds = mainWindow.getBounds()
-      const display = screen.getDisplayNearestPoint({ x: bounds.x, y: bounds.y })
-      const { x: wa_x, y: wa_y, width: wa_w, height: wa_h } = display.workArea
 
       let targetX = Math.round(bounds.x + dx)
       let targetY = Math.round(bounds.y + dy)
-
-      // Clamp target coordinates so companion box stays safely within the work area
-      targetX = Math.max(wa_x, Math.min(wa_x + wa_w - bounds.width, targetX))
-      targetY = Math.max(wa_y, Math.min(wa_y + wa_h - bounds.height, targetY))
 
       mainWindow.setBounds({
         x: targetX,
@@ -240,23 +236,35 @@ function createWindow(): BrowserWindow {
     let targetX = bounds.x
     const targetY = bounds.y // Strictly horizontal walking — vertical stays fixed
 
-    // Smooth horizontal shift (200px) away from cursor
-    const deltaX = (bounds.x + bounds.width / 2) - cursor.x
-    const SHIFT_DIST = 200
-
-    if (deltaX >= 0) {
-      targetX = bounds.x + SHIFT_DIST
+    if (consecutiveEvadeCount >= 3) {
+      // User has been working here and bumped Ash 3 times.
+      // Walk directly to the far opposite end corner!
+      consecutiveEvadeCount = 0
+      const isCursorOnRightHalf = cursor.x > (wa_x + wa_w / 2)
+      if (isCursorOnRightHalf) {
+        targetX = wa_x + 20 // Far left corner
+      } else {
+        targetX = wa_x + wa_w - bounds.width - 20 // Far right corner
+      }
     } else {
-      targetX = bounds.x - SHIFT_DIST
-    }
+      // Short horizontal shift (200px) away from cursor
+      const deltaX = (bounds.x + bounds.width / 2) - cursor.x
+      const SHIFT_DIST = 200
 
-    // Clamp within work area bounds
-    targetX = Math.max(wa_x + 10, Math.min(wa_x + wa_w - bounds.width - 10, targetX))
+      if (deltaX >= 0) {
+        targetX = bounds.x + SHIFT_DIST
+      } else {
+        targetX = bounds.x - SHIFT_DIST
+      }
 
-    // If hitting wall, step in opposite direction
-    if (Math.abs(targetX - bounds.x) < 20) {
-      targetX = deltaX >= 0 ? bounds.x - SHIFT_DIST : bounds.x + SHIFT_DIST
+      // Clamp within work area bounds
       targetX = Math.max(wa_x + 10, Math.min(wa_x + wa_w - bounds.width - 10, targetX))
+
+      // If hitting wall, step in opposite direction
+      if (Math.abs(targetX - bounds.x) < 20) {
+        targetX = deltaX >= 0 ? bounds.x - SHIFT_DIST : bounds.x + SHIFT_DIST
+        targetX = Math.max(wa_x + 10, Math.min(wa_x + wa_w - bounds.width - 10, targetX))
+      }
     }
 
     const distance = Math.abs(targetX - bounds.x)
@@ -420,15 +428,27 @@ app.whenReady().then(async () => {
       cursor.y >= bounds.y && cursor.y <= bounds.y + bounds.height
 
     if (isNear) {
-      if (isDirectlyOver) {
-        // Freeze movement if mouse is directly hovering over Ash so user can pet/click/interact
-        return
+      // Intent tracking: if cursor slows down or stops near/over Ash, user wants to interact!
+      if (cursorSpeed < 10 || isDirectlyOver) {
+        if (nearStationaryStartTime === null) {
+          nearStationaryStartTime = now
+        }
+        // Freeze movement if stationary for > 80ms or directly over Ash so user can double-click/interact!
+        if (now - nearStationaryStartTime > 80 || isDirectlyOver) {
+          return
+        }
+      } else {
+        // Cursor is moving actively towards/past Ash — reset catch window
+        nearStationaryStartTime = null
       }
-      // System active (idleTime === 0) & cooldown passed -> evade away smoothly
+
+      // System active (idleTime === 0) & cooldown passed -> flee
       if (idleTime === 0 && now - lastMoveByActivity > EVASION_COOLDOWN) {
         lastMoveByActivity = now
         triggerRoam()
       }
+    } else {
+      nearStationaryStartTime = null
     }
   }, 80)
 

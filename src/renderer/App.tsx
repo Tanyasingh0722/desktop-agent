@@ -424,8 +424,8 @@ export default function App() {
     return () => window.removeEventListener('mousedown', handleGlobalMouseDown, true)
   }, [drawerOpen, checkInVisible, closePanel])
 
-  const handleCompanionClick = useCallback(() => {
-    refreshAnchor()
+  const handleCompanionClick = useCallback(async () => {
+    await refreshAnchor()
     if (mood === 'sleeping') {
       changeMood('idle')
       window.ashAPI?.dismissMood()
@@ -538,8 +538,11 @@ export default function App() {
           onToggleDrawer={handleCompanionClick}
           onDoubleClick={handleCompanionClick}
           onDragStart={() => {
+            if (closingTimerRef.current) clearTimeout(closingTimerRef.current)
             setDrawerOpen(false)
             setCheckInVisible(false)
+            setPanelVisible(false)
+            setNotifQueue([]) // Clear notifications so bounding box shrinks for dragging
           }}
           onDragEnd={handleDragEnd}
           onContextMenu={handleContextMenu}
